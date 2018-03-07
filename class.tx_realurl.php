@@ -52,6 +52,12 @@ else {
  */
 class tx_realurl extends tx_realurl_baseclass {
 
+    /**
+     * decode page uid
+     * @var integer
+     */
+    public $decodePageUid = 0;
+
 	// External, static
 	var $NA = '-'; // Substitute value for "blank" values
 	var $maxLookUpLgd = 100; // Max. length of look-up strings. Just a "brake"
@@ -1157,6 +1163,8 @@ class tx_realurl extends tx_realurl_baseclass {
 		// Setting page id
 		list($cachedInfo['id'], $id_GET_VARS, $cachedInfo['rootpage_id']) = $this->decodeSpURL_idFromPath($pathParts);
 
+        $this->decodePageUid = $cachedInfo['id'];
+
 		// Fixed Post-vars
 		$fixedPostVarSetCfg = $this->getPostVarSetConfig($cachedInfo['id'], 'fixedPostVars');
 		$fixedPost_GET_VARS = $this->decodeSpURL_settingPreVars($pathParts, $fixedPostVarSetCfg);
@@ -1841,7 +1849,7 @@ class tx_realurl extends tx_realurl_baseclass {
 		// clearing it will mean it is built up again - but also that tons of URLs
 		// will not work reliably!
 
-		$stringForHash = $speakingURIpath;
+        $stringForHash = $speakingURIpath . $this->getRootLineIdentifier($this);
 		if (count($this->additionalParametersForChash)) {
 			$stringForHash .= '|' . serialize($this->additionalParametersForChash);
 		}
@@ -1852,7 +1860,7 @@ class tx_realurl extends tx_realurl_baseclass {
 			$GLOBALS['TYPO3_DB']->fullQuoteStr(md5($stringForHash),
 				'tx_realurl_chashcache'));
 
-		if (!is_array($row) && $stringForHash != $speakingURIpath) {
+        if (!is_array($row) && count($this->additionalParametersForChash)) {
 			// Use a more generic query if specific fails. This can happen when
 			// using _DOMAINS and the variable is set to 'bypass'.
 			$stringForHash = $speakingURIpath;
@@ -1999,12 +2007,16 @@ class tx_realurl extends tx_realurl_baseclass {
 	 * @see lookUpTranslation(), lookUp_idToUniqAlias()
 	 */
 	protected function lookUp_uniqAliasToId($cfg, $aliasValue, $onlyNonExpired = FALSE) {
+
+        $rootpage_id = intval($this->extConf['pagePath']['rootpage_id']);
+
 		/** @noinspection PhpUndefinedMethodInspection */
 		list($row) = $GLOBALS['TYPO3_DB']->exec_SELECTgetRows('value_id', 'tx_realurl_uniqalias',
 				'value_alias=' . $GLOBALS['TYPO3_DB']->fullQuoteStr($aliasValue, 'tx_realurl_uniqalias') .
 				' AND field_alias=' . $GLOBALS['TYPO3_DB']->fullQuoteStr($cfg['alias_field'], 'tx_realurl_uniqalias') .
 				' AND field_id=' . $GLOBALS['TYPO3_DB']->fullQuoteStr($cfg['id_field'], 'tx_realurl_uniqalias') .
 				' AND tablename=' . $GLOBALS['TYPO3_DB']->fullQuoteStr($cfg['table'], 'tx_realurl_uniqalias') .
+                ' AND rootpage_id=' . $rootpage_id .
 				' AND ' . ($onlyNonExpired ? 'expire=0' : '(expire=0 OR expire>' . time() . ')'));
 		return (is_array($row) ? $row['value_id'] : false);
 	}
@@ -2021,6 +2033,9 @@ class tx_realurl extends tx_realurl_baseclass {
 	 * @see lookUpTranslation(), lookUp_uniqAliasToId()
 	 */
 	protected function lookUp_idToUniqAlias($cfg, $idValue, $lang, $aliasValue = '') {
+
+        $rootpage_id = intval($this->extConf['pagePath']['rootpage_id']);
+
 		/** @noinspection PhpUndefinedMethodInspection */
 		list($row) = $GLOBALS['TYPO3_DB']->exec_SELECTgetRows('value_alias', 'tx_realurl_uniqalias',
 				'value_id=' . $GLOBALS['TYPO3_DB']->fullQuoteStr($idValue, 'tx_realurl_uniqalias') .
@@ -2028,6 +2043,7 @@ class tx_realurl extends tx_realurl_baseclass {
 				' AND field_id=' . $GLOBALS['TYPO3_DB']->fullQuoteStr($cfg['id_field'], 'tx_realurl_uniqalias') .
 				' AND tablename=' . $GLOBALS['TYPO3_DB']->fullQuoteStr($cfg['table'], 'tx_realurl_uniqalias') .
 				' AND lang=' . intval($lang) .
+                ' AND rootpage_id=' . $rootpage_id .
 				' AND expire=0' .
 				($aliasValue ? ' AND value_alias=' . $GLOBALS['TYPO3_DB']->fullQuoteStr($aliasValue, 'tx_realurl_uniqalias') : ''),
 				'', '', '1');
@@ -2052,6 +2068,8 @@ class tx_realurl extends tx_realurl_baseclass {
 	 * @see lookUpTranslation()
 	 */
 	protected function lookUp_newAlias($cfg, $newAliasValue, $idValue, $lang) {
+
+        $rootpage_id = intval($this->extConf['pagePath']['rootpage_id']);
 
 		// Clean preferred alias
 		$newAliasValue = $this->lookUp_cleanAlias($cfg, $newAliasValue);
@@ -2086,7 +2104,7 @@ class tx_realurl extends tx_realurl_baseclass {
 		}
 
 		// Insert the new id<->alias relation
-		$insertArray = array('tstamp' => time(), 'tablename' => $cfg['table'], 'field_alias' => $cfg['alias_field'], 'field_id' => $cfg['id_field'], 'value_alias' => $uniqueAlias, 'value_id' => $idValue, 'lang' => $lang);
+        $insertArray = array('tstamp' => time(), 'tablename' => $cfg['table'], 'field_alias' => $cfg['alias_field'], 'field_id' => $cfg['id_field'], 'value_alias' => $uniqueAlias, 'value_id' => $idValue, 'lang' => $lang, 'rootpage_id' => $rootpage_id);
 
 		// Checking that this alias hasn't been stored since we looked last time
 		$returnAlias = $this->lookUp_idToUniqAlias($cfg, $idValue, $lang, $uniqueAlias);
@@ -2103,6 +2121,7 @@ class tx_realurl extends tx_realurl_baseclass {
 					AND field_id=' . $GLOBALS['TYPO3_DB']->fullQuoteStr($cfg['id_field'], 'tx_realurl_uniqalias') . '
 					AND tablename=' . $GLOBALS['TYPO3_DB']->fullQuoteStr($cfg['table'], 'tx_realurl_uniqalias') . '
 					AND lang=' . intval($lang) . '
+					AND rootpage_id=' . $rootpage_id . '
 					AND expire=0', array('expire' => time() + 24 * 3600 * ($cfg['expireDays'] ? $cfg['expireDays'] : 60)));
 
 			// Store new alias
@@ -2827,6 +2846,43 @@ class tx_realurl extends tx_realurl_baseclass {
 	public function getDetectedLanguage() {
 		return intval($this->detectedLanguage);
 	}
+
+    /**
+     * get string identifier for rootline
+     *
+     * @return string
+     */
+    private function getRootLineIdentifier() {
+
+
+        $pageUid = intval($this->encodePageId ? $this->encodePageId : $this->decodePageUid);
+
+        $fixedPostVarSetCfg = $this->getPostVarSetConfig($pageUid, 'fixedPostVars');
+
+        foreach ($fixedPostVarSetCfg as $fixedPostVarSetCfgItem) {
+            if(isset($fixedPostVarSetCfgItem['lookUpTable'])) {
+                $tableName = trim($fixedPostVarSetCfgItem['lookUpTable']['table']);
+            }
+        }
+
+        if( $tableName == 'tx_pxaproductmanager_domain_model_product') {
+
+            $pageRepository = \TYPO3\CMS\Core\Utility\GeneralUtility::makeInstance('TYPO3\\CMS\\Frontend\\Page\\PageRepository');
+            $rootLine = array_reverse($pageRepository->getRootLine($pageUid));
+
+            foreach ($rootLine as $page) {
+                if($page['is_siteroot'] == 1) {
+                    $rootLineIdentifier = $page['uid'];
+                    break;
+                }
+            }
+
+            return $rootLineIdentifier;
+        }
+
+        return '';
+    }
+
 }
 
 /** @noinspection PhpUndefinedVariableInspection */
